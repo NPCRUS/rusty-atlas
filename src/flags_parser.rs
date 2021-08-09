@@ -6,7 +6,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct Flags {
-    verbosity: bool
+    pub verbosity: bool
 }
 
 #[derive(Debug)]
