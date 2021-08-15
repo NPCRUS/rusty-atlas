@@ -1,5 +1,4 @@
 mod flags_parser;
-mod flags_description;
 
 use std::env;
 use crate::flags_parser::{Flags, parse_args};

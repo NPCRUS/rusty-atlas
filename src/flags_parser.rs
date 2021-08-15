@@ -35,15 +35,39 @@ impl RawFlags {
             BooleanShortForm(flag) => flag
         }
     }
+
+    fn value(&self) -> String {
+        match self {
+            ShortForm(_, value) => value.to_string(),
+            LongForm(_, value) => value.to_string(),
+            BooleanShortForm(_) => String::from("true")
+        }
+    }
 }
+
+type Parser<T> = fn(String) -> Result<T, Box<dyn Error>>;
 
 pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, Box<dyn Error>> {
     let raw_flags = parse_string_to_raw_flags(args_raw)?;
-    raw_flags_to_flags(raw_flags)
+
+    let verbosity: bool = extract_flag_and_parse(&raw_flags, String::from("v"), String::from("verbosity"), boolean_parser)?;
+
+    Ok(Flags {
+        verbosity
+    })
 }
 
-fn raw_flags_to_flags(raw_flags: Vec<RawFlags>) -> Result<Flags, Box<dyn Error>> {
-    unimplemented!()
+fn extract_flag_and_parse<T>(raw_flags: &Vec<RawFlags>, short_form: String, long_form: String, parser: Parser<T>) -> Result<T, Box<dyn Error>> {
+    let result = raw_flags.iter().find(|&elem| {
+        match elem {
+            ShortForm(flag, _) if short_form.eq(flag) => true,
+            LongForm(flag, _) if long_form.eq(flag) => true,
+            BooleanShortForm(flag) if short_form.eq(flag) => true,
+            _ => false
+        }
+    }).ok_or(ParseError)?; // TODO: more specialized error
+
+    parser(result.value())
 }
 
 fn parse_string_to_raw_flags(args_raw: Vec<String>) -> Result<Vec<RawFlags>, Box<dyn Error>> {
@@ -65,20 +89,25 @@ fn parse_string_to_raw_flags(args_raw: Vec<String>) -> Result<Vec<RawFlags>, Box
             continue 'outer;
         }
 
-        return Err(ParseError)?;
+        return Err(ParseError)?; // TODO: more specialized error
     }
 
     return Ok(acc);
 }
 
 fn boolean_parser(str: String) -> Result<bool, Box<dyn Error>> {
-    unimplemented!();
+    match str.as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(ParseError)? // TODO: more specialized error
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    // parse_string_to_raw_flags tests
     #[test]
     fn parse_long_form() {
         let result = parse_string_to_raw_flags(vec![String::from("--test=lol.,j")]).unwrap();
@@ -116,7 +145,36 @@ mod test {
         let result = parse_string_to_raw_flags(vec![String::from("--file=lol"), String::from("./test.txt")]);
 
         if let Ok(_) = result {
-           panic!("should return Err(ParseError)");
+            panic!("should return Err(ParseError)");
         }
+    }
+
+    //extract_flag_and_parse tests
+    #[test]
+    fn return_error_if_cannot_extract_flag() {
+        let raw_flags = vec![LongForm(String::from("verbosity"), String::from("true"))];
+
+        let result = extract_flag_and_parse(&raw_flags, String::from("t"), String::from("test"), boolean_parser);
+        assert!(result.is_err(), "should not find flag")
+    }
+
+    fn return_error_if_parser_error() {
+        fn bad_parser(str: String) -> Result<bool, Box<dyn Error>> {
+            Err(ParseError)?
+        }
+
+        let raw_flags = vec![LongForm(String::from("test1"), String::from("true"))];
+        let result = extract_flag_and_parse(&raw_flags, String::from("t"), String::from("test1"), boolean_parser);
+        assert!(result.is_err(), "should not find flag")
+    }
+
+    #[test]
+    fn boolean_parser_test() {
+        let result = boolean_parser(String::from("true")).unwrap();
+        assert_eq!(result, true);
+        let result = boolean_parser(String::from("false")).unwrap();
+        assert_eq!(result, false);
+        let error = boolean_parser(String::from("True"));
+        assert!(error.is_err())
     }
 }
