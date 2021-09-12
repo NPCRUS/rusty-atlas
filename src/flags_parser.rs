@@ -9,8 +9,8 @@ pub struct Flags {
     pub verbosity: bool,
     pub images: Vec<String>,
     pub padding: i32,
-    // background_color: String,
-    // output_filename: String
+    pub background_color: String,
+    pub data_format: Option<DataFormat>
 }
 
 #[derive(Debug)]
@@ -25,6 +25,13 @@ impl fmt::Display for ParseError {
 }
 
 impl Error for ParseError {}
+
+#[derive(Debug)]
+#[derive(PartialEq)]
+pub enum DataFormat {
+    Json,
+    Xml
+}
 
 #[derive(Debug)]
 enum RawFlag {
@@ -51,11 +58,15 @@ pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, Box<dyn Error>> {
     let verbosity: bool = extract_flag_and_parse(&raw_flags, String::from("v"), String::from("verbose"), Some(false), boolean_parser)?;
     let images: Vec<String> = extract_flag_and_parse(&raw_flags, String::from("i"), String::from("images"), None, list_parser)?;
     let padding: i32 = extract_flag_and_parse(&raw_flags, String::from("p"), String::from("padding"), Some(1), int_parser)?;
+    let background_color: String = extract_flag_and_parse(&raw_flags, String::from("bg"), String::from("background"), Some(String::from("#000000")), |e| Ok(e))?;
+    let data_format: Option<DataFormat> = extract_flag_and_parse(&raw_flags, String::from("df"), String::from("data_format"), None, data_format_parser).ok();
 
     Ok(Flags {
         verbosity,
         images,
-        padding
+        padding,
+        background_color,
+        data_format
     })
 }
 
@@ -116,7 +127,15 @@ fn boolean_parser(str: String) -> Result<bool, Box<dyn Error>> {
 fn int_parser(str: String) -> Result<i32, Box<dyn Error>> {
     match str.parse::<i32>() {
         Ok(v) => Ok(v),
-        Err(_) => Err(Box::new(ParseError::Basic))
+        Err(_) => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    }
+}
+
+fn data_format_parser(str: String) -> Result<DataFormat, Box<dyn Error>> {
+    match str.as_str() {
+        "json" => Ok(DataFormat::Json),
+        "xml" => Ok(DataFormat::Xml),
+        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
     }
 }
 
@@ -251,5 +270,12 @@ mod test {
         let result = int_parser(String::from("42"));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42)
+    }
+
+    #[test]
+    fn data_format_parser_test() {
+        assert_eq!(data_format_parser(String::from("json")).unwrap(), DataFormat::Json);
+        assert_eq!(data_format_parser(String::from("xml")).unwrap(), DataFormat::Xml);
+        assert_eq!(data_format_parser(String::from("xmjl")).is_err(), true);
     }
 }
