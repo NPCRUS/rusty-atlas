@@ -8,13 +8,15 @@ use std::fmt;
 pub struct Flags {
     pub verbosity: bool,
     pub images: Vec<String>,
-    // pub padding: i32,
+    pub padding: i32,
     // background_color: String,
     // output_filename: String
 }
 
 #[derive(Debug)]
-struct ParseError;
+enum ParseError {
+    Basic
+}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -32,14 +34,6 @@ enum RawFlag {
 }
 
 impl RawFlag {
-    fn flag(&self) -> &String {
-        match self {
-            ShortForm(flag, _) => flag,
-            LongForm(flag, _) => flag,
-            BooleanShortForm(flag) => flag
-        }
-    }
-
     fn value(&self) -> String {
         match self {
             ShortForm(_, value) => value.to_string(),
@@ -56,10 +50,12 @@ pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, Box<dyn Error>> {
 
     let verbosity: bool = extract_flag_and_parse(&raw_flags, String::from("v"), String::from("verbose"), Some(false), boolean_parser)?;
     let images: Vec<String> = extract_flag_and_parse(&raw_flags, String::from("i"), String::from("images"), None, list_parser)?;
+    let padding: i32 = extract_flag_and_parse(&raw_flags, String::from("p"), String::from("padding"), Some(1), int_parser)?;
 
     Ok(Flags {
         verbosity,
-        images
+        images,
+        padding
     })
 }
 
@@ -78,7 +74,7 @@ fn extract_flag_and_parse<T>(raw_flags: &Vec<RawFlag>,
     });
 
     match (result, default_value) {
-        (None, None) => Err(Box::new(ParseError)),
+        (None, None) => Err(Box::new(ParseError::Basic)), // TODO: more specialized error
         (None, Some(value)) => Ok(value),
         (Some(res), _) => parser(res.value())
     }
@@ -103,7 +99,7 @@ fn parse_string_to_raw_flags(args_raw: Vec<String>) -> Result<Vec<RawFlag>, Box<
             continue 'outer;
         }
 
-        return Err(ParseError)?; // TODO: more specialized error
+        return Err(Box::new(ParseError::Basic)); // TODO: more specialized error
     }
 
     return Ok(acc);
@@ -113,7 +109,14 @@ fn boolean_parser(str: String) -> Result<bool, Box<dyn Error>> {
     match str.as_str() {
         "true" => Ok(true),
         "false" => Ok(false),
-        _ => Err(ParseError)? // TODO: more specialized error
+        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    }
+}
+
+fn int_parser(str: String) -> Result<i32, Box<dyn Error>> {
+    match str.parse::<i32>() {
+        Ok(v) => Ok(v),
+        Err(_) => Err(Box::new(ParseError::Basic))
     }
 }
 
@@ -128,7 +131,7 @@ fn list_parser(str: String) -> Result<Vec<String>, Box<dyn Error>> {
     let split: Vec<&str> = replaced.split(",").collect();
 
     if split.is_empty() {
-        Err(Box::new(ParseError))
+        Err(Box::new(ParseError::Basic)) // TODO: more specialized error
     } else {
         Ok(split.iter().map(|&e| String::from(e)).collect())
     }
@@ -200,7 +203,7 @@ mod test {
     #[test]
     fn return_error_if_parser_error_and_no_default_value() {
         fn bad_parser(_: String) -> Result<bool, Box<dyn Error>> {
-            Err(ParseError)?
+            Err(ParseError::Basic)?
         }
 
         let raw_flags = vec![LongForm(String::from("test1"), String::from("true"))];
@@ -239,5 +242,14 @@ mod test {
         let result = list_parser(String::from("[./dibil.com, allo.me]")).unwrap();
         assert_eq!(result.first().unwrap(), &String::from("./dibil.com"));
         assert_eq!(result.last().unwrap(), &String::from("allo.me"))
+    }
+
+    #[test]
+    fn int_parser_test() {
+        let result = int_parser(String::from("wes"));
+        assert!(result.is_err());
+        let result = int_parser(String::from("42"));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42)
     }
 }
