@@ -10,7 +10,9 @@ pub struct Flags {
     pub images: Vec<String>,
     pub padding: i32,
     pub background_color: String,
-    pub data_format: Option<DataFormat>
+    pub data_format: Option<DataFormat>,
+    pub filename: String,
+    pub image_resolution: (i32, i32)
 }
 
 #[derive(Debug)]
@@ -60,13 +62,17 @@ pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, Box<dyn Error>> {
     let padding: i32 = extract_flag_and_parse(&raw_flags, String::from("p"), String::from("padding"), Some(1), int_parser)?;
     let background_color: String = extract_flag_and_parse(&raw_flags, String::from("bg"), String::from("background"), Some(String::from("#000000")), |e| Ok(e))?;
     let data_format: Option<DataFormat> = extract_flag_and_parse(&raw_flags, String::from("df"), String::from("data_format"), None, data_format_parser).ok();
+    let filename: String = extract_flag_and_parse(&raw_flags, String::from("f"), String::from("filename"), None, |e| Ok(e))?;
+    let image_resolution = extract_flag_and_parse(&raw_flags, String::from("ir"), String::from("image_resolution"), None, resolution_parser)?;
 
     Ok(Flags {
         verbosity,
         images,
         padding,
         background_color,
-        data_format
+        data_format,
+        filename,
+        image_resolution
     })
 }
 
@@ -135,6 +141,20 @@ fn data_format_parser(str: String) -> Result<DataFormat, Box<dyn Error>> {
     match str.as_str() {
         "json" => Ok(DataFormat::Json),
         "xml" => Ok(DataFormat::Xml),
+        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    }
+}
+
+fn resolution_parser(str: String) -> Result<(i32, i32), Box<dyn Error>> {
+    let split: Vec<&str> = str.split(",").collect();
+    match split[..] {
+        [x, y] =>
+            match x.parse::<i32>().and_then(|x| {
+                y.parse::<i32>().map(|y| (x, y))
+            }) {
+                Ok(v) => Ok(v),
+                Err(_) => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+            }
         _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
     }
 }
@@ -277,5 +297,12 @@ mod test {
         assert_eq!(data_format_parser(String::from("json")).unwrap(), DataFormat::Json);
         assert_eq!(data_format_parser(String::from("xml")).unwrap(), DataFormat::Xml);
         assert_eq!(data_format_parser(String::from("xmjl")).is_err(), true);
+    }
+
+    #[test]
+    fn resolution_parser_test() {
+        assert_eq!(resolution_parser(String::from("123,453")).unwrap(), (123, 453));
+        assert_eq!(resolution_parser(String::from("rre,123")).is_err(), true);
+        assert_eq!(resolution_parser(String::from("true")).is_err(), true);
     }
 }
