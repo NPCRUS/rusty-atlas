@@ -147,15 +147,10 @@ fn data_format_parser(str: String) -> Result<DataFormat, Box<dyn Error>> {
 
 fn resolution_parser(str: String) -> Result<(i32, i32), Box<dyn Error>> {
     let split: Vec<&str> = str.split(",").collect();
-    match split[..] {
-        [x, y] =>
-            match x.parse::<i32>().and_then(|x| {
-                y.parse::<i32>().map(|y| (x, y))
-            }) {
-                Ok(v) => Ok(v),
-                Err(_) => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
-            }
-        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    if let [x, y] = split[..] {
+        Ok((x.parse::<i32>()?, y.parse::<i32>()?))
+    } else {
+        Err(Box::new(ParseError::Basic))
     }
 }
 
