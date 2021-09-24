@@ -3,6 +3,7 @@ use Result::{Err, Ok};
 use crate::flags_parser::RawFlag::{BooleanShortForm, LongForm, ShortForm};
 use std::error::Error;
 use std::fmt;
+use crate::flags_parser::ParseError::TokenParsingFailed;
 
 #[derive(Debug)]
 pub struct Flags {
@@ -16,13 +17,27 @@ pub struct Flags {
 }
 
 #[derive(Debug)]
-enum ParseError {
-    Basic
+pub enum ParseError {
+    Basic,
+    FlagNotFound(String),
+    InvalidArgumentOrder(String),
+    TokenParsingFailed(Box<dyn Error>),
+    FlagParserError(String, Box<dyn Error>),
+    DataFormatParsingFailed(String),
+    EmptyListError(String)
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Parse error: TBD")
+        match &self {
+            ParseError::FlagNotFound(str) => write!(f, "Didn't find required flag `{}`", str),
+            ParseError::InvalidArgumentOrder(str) => write!(f, "Invalid argument order for `{}`", str),
+            ParseError::TokenParsingFailed(err) => write!(f, "Parsing command line string to tokens failed: {}", err),
+            ParseError::FlagParserError(str, err) => write!(f, "Wasn't able to parse flag `{}`, {}", str, err),
+            ParseError::DataFormatParsingFailed(str) => write!(f, "Provided string({}) was not `json` or `xml`", str),
+            ParseError::EmptyListError(str) => write!(f, "Provided list of values({}) was empty", str),
+            _ => write!(f, "Not implemented yet")
+        }
     }
 }
 
@@ -54,33 +69,36 @@ impl RawFlag {
 
 type Parser<T> = fn(String) -> Result<T, Box<dyn Error>>;
 
-pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, Box<dyn Error>> {
-    let raw_flags = parse_string_to_raw_flags(args_raw)?;
+pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, ParseError> {
+    match parse_string_to_raw_flags(args_raw) {
+        Err(e) => Err(TokenParsingFailed(e)),
+        Ok(raw_flags) => {
+            let verbosity: bool = extract_flag_and_parse( & raw_flags, String::from("v"), String::from("verbose"), Some(false), boolean_parser)?;
+            let padding: i32 = extract_flag_and_parse( & raw_flags, String::from("p"), String::from("padding"), Some(1), int_parser)?;
+            let background_color: String = extract_flag_and_parse( & raw_flags, String::from("bg"), String::from("background"), Some(String::from("#000000")), | e | Ok(e))?;
+            let data_format: Option < DataFormat > = extract_flag_and_parse( & raw_flags, String::from("df"), String::from("data_format"), None, data_format_parser).map(|r| Some(r))?;
+            let filename: String = extract_flag_and_parse( & raw_flags, String::from("f"), String::from("filename"), None, | e | Ok(e))?;
+            let image_resolution = extract_flag_and_parse(& raw_flags, String::from("ir"), String::from("image_resolution"), None, resolution_parser)?;
+            let images: Vec < String > = extract_flag_and_parse( & raw_flags, String::from("i"), String::from("images"), None, list_parser)?;
 
-    let verbosity: bool = extract_flag_and_parse(&raw_flags, String::from("v"), String::from("verbose"), Some(false), boolean_parser)?;
-    let images: Vec<String> = extract_flag_and_parse(&raw_flags, String::from("i"), String::from("images"), None, list_parser)?;
-    let padding: i32 = extract_flag_and_parse(&raw_flags, String::from("p"), String::from("padding"), Some(1), int_parser)?;
-    let background_color: String = extract_flag_and_parse(&raw_flags, String::from("bg"), String::from("background"), Some(String::from("#000000")), |e| Ok(e))?;
-    let data_format: Option<DataFormat> = extract_flag_and_parse(&raw_flags, String::from("df"), String::from("data_format"), None, data_format_parser).ok();
-    let filename: String = extract_flag_and_parse(&raw_flags, String::from("f"), String::from("filename"), None, |e| Ok(e))?;
-    let image_resolution = extract_flag_and_parse(&raw_flags, String::from("ir"), String::from("image_resolution"), None, resolution_parser)?;
-
-    Ok(Flags {
-        verbosity,
-        images,
-        padding,
-        background_color,
-        data_format,
-        filename,
-        image_resolution
-    })
+            Ok(Flags {
+            verbosity,
+            images,
+            padding,
+            background_color,
+            data_format,
+            filename,
+            image_resolution
+            })
+        }
+    }
 }
 
 fn extract_flag_and_parse<T>(raw_flags: &Vec<RawFlag>,
                              short_form: String,
                              long_form: String,
                              default_value: Option<T>,
-                             parser: Parser<T>) -> Result<T, Box<dyn Error>> {
+                             parser: Parser<T>) -> Result<T, ParseError> {
     let result = raw_flags.iter().find(|&elem| {
         match elem {
             ShortForm(flag, _) if short_form.eq(flag) => true,
@@ -91,9 +109,12 @@ fn extract_flag_and_parse<T>(raw_flags: &Vec<RawFlag>,
     });
 
     match (result, default_value) {
-        (None, None) => Err(Box::new(ParseError::Basic)), // TODO: more specialized error
+        (None, None) => Err(ParseError::FlagNotFound(long_form)),
         (None, Some(value)) => Ok(value),
-        (Some(res), _) => parser(res.value())
+        (Some(res), _) => match parser(res.value()) {
+            Err(e) => Err(ParseError::FlagParserError(long_form, e)),
+            Ok(v) => Ok(v)
+        }
     }
 }
 
@@ -116,24 +137,23 @@ fn parse_string_to_raw_flags(args_raw: Vec<String>) -> Result<Vec<RawFlag>, Box<
             continue 'outer;
         }
 
-        return Err(Box::new(ParseError::Basic)); // TODO: more specialized error
+        return Err(Box::new(ParseError::InvalidArgumentOrder(str.to_string())));
     }
 
     return Ok(acc);
 }
 
 fn boolean_parser(str: String) -> Result<bool, Box<dyn Error>> {
-    match str.as_str() {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    match str.parse() {
+        Err(e) => Err(Box::new(e)),
+        Ok(v) => Ok(v)
     }
 }
 
 fn int_parser(str: String) -> Result<i32, Box<dyn Error>> {
     match str.parse::<i32>() {
+        Err(e) => Err(Box::new(e)),
         Ok(v) => Ok(v),
-        Err(_) => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
     }
 }
 
@@ -141,7 +161,7 @@ fn data_format_parser(str: String) -> Result<DataFormat, Box<dyn Error>> {
     match str.as_str() {
         "json" => Ok(DataFormat::Json),
         "xml" => Ok(DataFormat::Xml),
-        _ => Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+        _ => Err(Box::new(ParseError::DataFormatParsingFailed(str)))
     }
 }
 
@@ -164,8 +184,8 @@ fn list_parser(str: String) -> Result<Vec<String>, Box<dyn Error>> {
 
     let split: Vec<&str> = replaced.split(",").collect();
 
-    if split.is_empty() {
-        Err(Box::new(ParseError::Basic)) // TODO: more specialized error
+    if split.is_empty() || split.first().unwrap().is_empty() {
+        Err(Box::new(ParseError::EmptyListError(str)))
     } else {
         Ok(split.iter().map(|&e| String::from(e)).collect())
     }
@@ -212,9 +232,7 @@ mod test {
     fn return_invalid_argument_order() {
         let result = parse_string_to_raw_flags(vec![String::from("--file=lol"), String::from("./test.txt")]);
 
-        if let Ok(_) = result {
-            panic!("should return Err(ParseError)");
-        }
+        assert!(result.is_err())
     }
 
     //extract_flag_and_parse tests

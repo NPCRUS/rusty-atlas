@@ -8,7 +8,10 @@ use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let parsed_args = parse_args(args);
-    println!("{:?}", parsed_args);
+    match parsed_args {
+        Err(e) => eprintln!("Arguments parser error: {}", e),
+        Ok(args) => println!("arguments parsed: {:?}", args)
+    }
 
     // TODO: test usage, remove
     // let mut file_paths = Vec::new();
