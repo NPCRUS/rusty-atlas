@@ -1,5 +1,6 @@
 use image::io::Reader as ImageReader;
 use image::{GenericImageView};
+use crate::flags_parser::Flags;
 
 struct Atlas {
     buffer: Vec<u8>,
@@ -31,15 +32,15 @@ impl Atlas {
 }
 
 // TODO: fix return type, remove unwraps
-pub fn make_atlas(file_paths: Vec<String>) -> bool {
+pub fn make_atlas(flags: Flags) -> bool {
     let mut atlas = Atlas {
         buffer: Vec::new(),
         width: 0,
         height: 32, // TODO: shouldn't be set here, should be taken from the images
     };
 
-    for img_path in file_paths.iter() {
-        let img = ImageReader::open(img_path)
+    for img_path in flags.images.iter() {
+        let img = ImageReader::open(img_path.as_path())
             .unwrap()
             .with_guessed_format()
             .unwrap()

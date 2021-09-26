@@ -4,11 +4,12 @@ use crate::flags_parser::RawFlag::{BooleanShortForm, LongForm, ShortForm};
 use std::error::Error;
 use std::fmt;
 use crate::flags_parser::ParseError::TokenParsingFailed;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Flags {
     pub verbosity: bool,
-    pub images: Vec<String>,
+    pub images: Vec<PathBuf>,
     pub padding: i32,
     pub background_color: String,
     pub data_format: Option<DataFormat>,
@@ -18,13 +19,13 @@ pub struct Flags {
 
 #[derive(Debug)]
 pub enum ParseError {
-    Basic,
     FlagNotFound(String),
     InvalidArgumentOrder(String),
     TokenParsingFailed(Box<dyn Error>),
     FlagParserError(String, Box<dyn Error>),
     DataFormatParsingFailed(String),
-    EmptyListError(String)
+    EmptyListError(String),
+    ResolutionParsingError(String)
 }
 
 impl fmt::Display for ParseError {
@@ -36,7 +37,7 @@ impl fmt::Display for ParseError {
             ParseError::FlagParserError(str, err) => write!(f, "Wasn't able to parse flag `{}`, {}", str, err),
             ParseError::DataFormatParsingFailed(str) => write!(f, "Provided string({}) was not `json` or `xml`", str),
             ParseError::EmptyListError(str) => write!(f, "Provided list of values({}) was empty", str),
-            _ => write!(f, "Not implemented yet")
+            ParseError::ResolutionParsingError(str) => write!(f, "Wrong format, expected: `200,200`, got: `{}`", str)
         }
     }
 }
@@ -79,7 +80,7 @@ pub fn parse_args(args_raw: Vec<String>) -> Result<Flags, ParseError> {
             let data_format: Option < DataFormat > = extract_flag_and_parse( & raw_flags, String::from("df"), String::from("data_format"), None, data_format_parser).map(|r| Some(r))?;
             let filename: String = extract_flag_and_parse( & raw_flags, String::from("f"), String::from("filename"), None, | e | Ok(e))?;
             let image_resolution = extract_flag_and_parse(& raw_flags, String::from("ir"), String::from("image_resolution"), None, resolution_parser)?;
-            let images: Vec < String > = extract_flag_and_parse( & raw_flags, String::from("i"), String::from("images"), None, list_parser)?;
+            let images: Vec<PathBuf> = extract_flag_and_parse(& raw_flags, String::from("i"), String::from("images"), None, paths_list_parser)?;
 
             Ok(Flags {
             verbosity,
@@ -170,11 +171,11 @@ fn resolution_parser(str: String) -> Result<(i32, i32), Box<dyn Error>> {
     if let [x, y] = split[..] {
         Ok((x.parse::<i32>()?, y.parse::<i32>()?))
     } else {
-        Err(Box::new(ParseError::Basic))
+        Err(Box::new(ParseError::ResolutionParsingError(str)))
     }
 }
 
-fn list_parser(str: String) -> Result<Vec<String>, Box<dyn Error>> {
+fn paths_list_parser(str: String) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let replaced: String = str.chars().filter(|c| match c {
             '[' | ']' => false,
             c if c.is_whitespace() => false,
@@ -187,7 +188,7 @@ fn list_parser(str: String) -> Result<Vec<String>, Box<dyn Error>> {
     if split.is_empty() || split.first().unwrap().is_empty() {
         Err(Box::new(ParseError::EmptyListError(str)))
     } else {
-        Ok(split.iter().map(|&e| String::from(e)).collect())
+        Ok(split.iter().map(|&e| PathBuf::from(String::from(e))).collect())
     }
 }
 
@@ -255,7 +256,7 @@ mod test {
     #[test]
     fn return_error_if_parser_error_and_no_default_value() {
         fn bad_parser(_: String) -> Result<bool, Box<dyn Error>> {
-            Err(ParseError::Basic)?
+            Err(ParseError::EmptyListError(String::from("test")))?
         }
 
         let raw_flags = vec![LongForm(String::from("test1"), String::from("true"))];
@@ -286,14 +287,14 @@ mod test {
         let result = boolean_parser(String::from("false")).unwrap();
         assert_eq!(result, false);
         let error = boolean_parser(String::from("True"));
-        assert!(error.is_err())
+        assert!(error.is_err());
     }
 
     #[test]
-    fn list_parser_test() {
-        let result = list_parser(String::from("[./dibil.com, allo.me]")).unwrap();
-        assert_eq!(result.first().unwrap(), &String::from("./dibil.com"));
-        assert_eq!(result.last().unwrap(), &String::from("allo.me"))
+    fn paths_list_parser_test() {
+        let result = paths_list_parser(String::from("[./dibil.com, allo.me]")).unwrap();
+        assert_eq!(result.first().unwrap(), &PathBuf::from(String::from("./dibil.com")));
+        assert_eq!(result.last().unwrap(), &PathBuf::from(String::from("allo.me")));
     }
 
     #[test]
@@ -302,7 +303,7 @@ mod test {
         assert!(result.is_err());
         let result = int_parser(String::from("42"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42)
+        assert_eq!(result.unwrap(), 42);
     }
 
     #[test]

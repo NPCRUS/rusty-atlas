@@ -10,7 +10,11 @@ fn main() {
     let parsed_args = parse_args(args);
     match parsed_args {
         Err(e) => eprintln!("Arguments parser error: {}", e),
-        Ok(args) => println!("arguments parsed: {:?}", args)
+        Ok(flags) => {
+            println!("success: {:?}", flags);
+            make_atlas(flags);
+            println!();
+        }
     }
 
     // TODO: test usage, remove
